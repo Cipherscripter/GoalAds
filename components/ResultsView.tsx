@@ -122,7 +122,6 @@ export default function ResultsView() {
     if (!data) return;
 
     try {
-      // Dynamic import so jspdf only loads when needed
       const { jsPDF } = await import("jspdf");
 
       const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
@@ -131,10 +130,14 @@ export default function ResultsView() {
       const contentW = pageW - margin * 2;
       let y = margin;
 
+      // Strip emojis — jsPDF can't render them
+      const stripEmoji = (text: string) =>
+        text.replace(/[\u{1F000}-\u{1FFFF}|\u{2600}-\u{27FF}|\u{FE00}-\u{FEFF}]/gu, "").trim();
+
       // ── Header ──────────────────────────────────────────────────────────────
-      doc.setFillColor(10, 79, 46); // forest green
+      doc.setFillColor(10, 79, 46);
       doc.rect(0, 0, pageW, 28, "F");
-      doc.setTextColor(240, 180, 41); // gold
+      doc.setTextColor(240, 180, 41);
       doc.setFontSize(20);
       doc.setFont("helvetica", "bold");
       doc.text("GoalAds", margin, 13);
@@ -142,20 +145,23 @@ export default function ResultsView() {
       doc.setFontSize(10);
       doc.setFont("helvetica", "normal");
       doc.text("World Cup 2026 Ad Creatives", margin, 21);
-      doc.text(`Generated ${new Date().toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })}`, pageW - margin, 21, { align: "right" });
+      doc.text(
+        `Generated ${new Date().toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })}`,
+        pageW - margin, 21, { align: "right" }
+      );
       y = 38;
 
       // ── Campaign info ────────────────────────────────────────────────────────
       doc.setTextColor(30, 30, 30);
-      doc.setFontSize(14);
+      doc.setFontSize(15);
       doc.setFont("helvetica", "bold");
       doc.text(data.form.businessName, margin, y);
-      y += 6;
+      y += 7;
       doc.setFontSize(9);
       doc.setFont("helvetica", "normal");
       doc.setTextColor(100, 100, 100);
       doc.text(
-        `Product: ${data.form.product}  ·  Tone: ${data.form.tone}  ·  Region: ${data.form.region}  ·  Audience: ${data.form.audience}`,
+        `Product: ${data.form.product}   Tone: ${data.form.tone}   Region: ${data.form.region}   Audience: ${data.form.audience}`,
         margin, y
       );
       if (data.form.offer) {
@@ -165,29 +171,27 @@ export default function ResultsView() {
       y += 8;
 
       // Divider
-      doc.setDrawColor(220, 220, 220);
+      doc.setDrawColor(200, 220, 200);
       doc.line(margin, y, pageW - margin, y);
       y += 8;
 
-      // ── Output cards ─────────────────────────────────────────────────────────
+      // ── Platform labels (no emoji) ────────────────────────────────────────────
       const platformLabel: Record<string, string> = {
-        instagram: "📸 Instagram Caption",
-        whatsapp: "💬 WhatsApp Broadcast",
-        twitter: "🐦 Twitter / X Post",
-        facebook: "👥 Facebook Post",
-        sms: "📱 SMS Blast",
-        linkedin: "💼 LinkedIn Post",
+        instagram: "Instagram Caption",
+        whatsapp: "WhatsApp Broadcast",
+        twitter: "Twitter / X Post",
+        facebook: "Facebook Post",
+        sms: "SMS Blast",
+        linkedin: "LinkedIn Post",
       };
 
       for (const result of data.results) {
-        const copy = copies[result.platform] || result.copy;
-        if (!copy) continue;
+        const rawCopy = copies[result.platform] || result.copy;
+        if (!rawCopy) continue;
 
+        // Strip emojis from copy text
+        const copy = stripEmoji(rawCopy);
         const label = platformLabel[result.platform] || result.platform;
-
-        // Platform header bar
-        doc.setFillColor(245, 247, 245);
-        doc.setDrawColor(200, 220, 200);
 
         // Platform label
         doc.setFontSize(10);
@@ -196,47 +200,46 @@ export default function ResultsView() {
         doc.text(label, margin, y);
         y += 5;
 
-        // Copy text — wrapped
+        // Wrap copy text
         doc.setFontSize(9.5);
         doc.setFont("helvetica", "normal");
         doc.setTextColor(40, 40, 40);
-        const lines = doc.splitTextToSize(copy, contentW);
+        const lines = doc.splitTextToSize(copy, contentW - 8);
 
-        // Check if we need a new page
-        if (y + lines.length * 5 + 10 > 270) {
+        // New page if needed
+        if (y + lines.length * 5 + 14 > 272) {
           doc.addPage();
           y = margin;
         }
 
-        // Light background box
-        const boxH = lines.length * 5 + 8;
+        // Copy box
+        const boxH = lines.length * 5 + 10;
         doc.setFillColor(250, 252, 250);
-        doc.setDrawColor(220, 235, 220);
+        doc.setDrawColor(210, 230, 210);
         doc.roundedRect(margin, y, contentW, boxH, 2, 2, "FD");
-
         doc.text(lines, margin + 4, y + 6);
-        y += boxH + 10;
 
-        // Word count
+        // Word count bottom-right
         const wordCount = copy.trim().split(/\s+/).length;
         doc.setFontSize(8);
-        doc.setTextColor(150, 150, 150);
-        doc.text(`${wordCount} words`, pageW - margin, y - 6, { align: "right" });
+        doc.setTextColor(160, 160, 160);
+        doc.text(`${wordCount} words`, pageW - margin - 2, y + boxH - 3, { align: "right" });
+
+        y += boxH + 10;
       }
 
-      // ── Footer on last page ──────────────────────────────────────────────────
+      // ── Footer ───────────────────────────────────────────────────────────────
       const pageCount = doc.getNumberOfPages();
       for (let p = 1; p <= pageCount; p++) {
         doc.setPage(p);
         doc.setFontSize(8);
         doc.setTextColor(180, 180, 180);
         doc.text(
-          `Generated by GoalAds · goalads.io · Page ${p} of ${pageCount}`,
+          `Generated by GoalAds  |  goalads.io  |  Page ${p} of ${pageCount}`,
           pageW / 2, 290, { align: "center" }
         );
       }
 
-      // Save
       const filename = `${data.form.businessName.replace(/\s+/g, "-").toLowerCase()}-goalads-wc2026.pdf`;
       doc.save(filename);
     } catch (err) {
@@ -431,10 +434,10 @@ export default function ResultsView() {
       </div>
 
       {/* PDF Export */}
-      <div className="flex items-center justify-between card p-6">
+      <div className="flex items-center justify-between bg-gray-900 border border-gray-700 rounded-2xl p-6">
         <div>
           <h3 className="text-white font-semibold">Export as PDF</h3>
-          <p className="text-gray-500 text-sm mt-0.5">
+          <p className="text-gray-400 text-sm mt-0.5">
             {isAgencyOrHigher
               ? "Download a white-label PDF of all your creatives"
               : "Agency and Enterprise feature — white-label PDF report"}
@@ -442,10 +445,10 @@ export default function ResultsView() {
         </div>
         <button
           onClick={handlePdfExport}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all ${
+          className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold transition-all ${
             isAgencyOrHigher
-              ? "bg-gold-DEFAULT hover:bg-gold-light text-gray-900"
-              : "bg-gray-800 border border-gray-700 text-gray-400 hover:border-gold-DEFAULT/30"
+              ? "bg-[#f0b429] hover:bg-[#f5c84a] text-gray-900"
+              : "bg-gray-800 border border-gray-600 text-gray-300 hover:border-[#f0b429]/50 hover:text-white"
           }`}
         >
           <Download className="w-4 h-4" />
