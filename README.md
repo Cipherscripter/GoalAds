@@ -1,36 +1,125 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# GoalAds — World Cup 2026 Ad Creative Generator
 
-## Getting Started
+AI-powered marketing copy for small businesses and agencies worldwide. Generate ready-to-use World Cup 2026 themed ad copy for Instagram, WhatsApp, X, Facebook, SMS, and LinkedIn — in 30 seconds.
 
-First, run the development server:
+## Tech Stack
+
+- **Next.js 14** (App Router)
+- **Tailwind CSS**
+- **Clerk** (authentication)
+- **Stripe** (payments + webhooks)
+- **Supabase** (brand profiles + generation logs)
+- **Claude API** (Anthropic — ad copy generation)
+
+## Setup
+
+### 1. Clone and install
+
+```bash
+npm install
+```
+
+### 2. Configure environment variables
+
+Copy `.env.example` to `.env.local` and fill in all values:
+
+```bash
+cp .env.example .env.local
+```
+
+#### Required services:
+
+**Anthropic (Claude API)**
+- Sign up at https://console.anthropic.com
+- Create an API key → `ANTHROPIC_API_KEY`
+
+**Clerk (Auth)**
+- Create a project at https://dashboard.clerk.com
+- Set `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` and `CLERK_SECRET_KEY`
+- In Clerk dashboard: Redirects → set sign-in URL to `/sign-in`, sign-up to `/sign-up`
+
+**Stripe (Payments)**
+- Create products in Stripe Dashboard:
+  - Pro: $49/month → set `STRIPE_PRO_PRICE_ID`
+  - Agency: $149/month → set `STRIPE_AGENCY_PRICE_ID`
+  - Enterprise: $499/month → set `STRIPE_ENTERPRISE_PRICE_ID`
+  - Pro Annual: $490/year → set `STRIPE_PRO_ANNUAL_PRICE_ID`
+  - Agency Annual: $1,490/year → set `STRIPE_AGENCY_ANNUAL_PRICE_ID`
+  - Enterprise Annual: $4,990/year → set `STRIPE_ENTERPRISE_ANNUAL_PRICE_ID`
+- Set `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` and `STRIPE_SECRET_KEY`
+- For webhooks: `stripe listen --forward-to localhost:3000/api/webhooks/stripe`
+- Set `STRIPE_WEBHOOK_SECRET` from the CLI output
+
+**Supabase (Database)**
+- Create a project at https://supabase.com
+- Run `supabase-schema.sql` in the Supabase SQL editor
+- Set `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+
+### 3. Run development server
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open http://localhost:3000
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### 4. Deploy to Vercel
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+vercel --prod
+```
 
-## Learn More
+Add all env vars in the Vercel dashboard. Update `NEXT_PUBLIC_APP_URL` to your production domain.
 
-To learn more about Next.js, take a look at the following resources:
+## Pages
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+| Route | Description |
+|-------|-------------|
+| `/` | Landing page with hero, samples, pricing, FAQ |
+| `/generate` | Ad generator form (auth required) |
+| `/results` | Generated output cards (auth required) |
+| `/dashboard` | Usage stats and brand profiles (auth required) |
+| `/blog` | 3 marketing articles |
+| `/templates` | 9 industry sample outputs |
+| `/affiliates` | Affiliate program landing page |
+| `/terms` | Terms of Service |
+| `/privacy` | Privacy Policy |
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## API Routes
 
-## Deploy on Vercel
+| Route | Method | Description |
+|-------|--------|-------------|
+| `/api/generate` | POST | Generate ad copy via Claude API |
+| `/api/checkout` | GET | Create Stripe checkout session |
+| `/api/billing-portal` | GET | Open Stripe customer portal |
+| `/api/webhooks/stripe` | POST | Handle Stripe events (subscription changes) |
+| `/api/brands` | GET/POST/DELETE | Brand profile CRUD (Agency+) |
+| `/api/stats` | GET | User generation statistics |
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Pricing Tiers
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+| Plan | Price | Features |
+|------|-------|----------|
+| Free | $0 | 3 generations, watermark |
+| Pro | $49/mo | Unlimited, no watermark, hashtags |
+| Agency | $149/mo | + Brand profiles, PDF export, CSV |
+| Enterprise | $499/mo | + Unlimited brands, custom AI tone, API |
+
+Annual pricing: 2 months free (Pro $490/yr, Agency $1,490/yr, Enterprise $4,990/yr)
+
+## Supabase Schema
+
+Run `supabase-schema.sql` to create:
+- `brand_profiles` — saved brand info for Agency/Enterprise users
+- `generation_logs` — usage tracking for all users
+
+## Free Tier Tracking
+
+Free tier usage (3 generations) is tracked in `localStorage` under `goalads_generation_count`. After 3 uses, a full-screen upgrade modal appears.
+
+## Stripe Webhook Setup
+
+The webhook at `/api/webhooks/stripe` handles:
+- `checkout.session.completed` → Updates Clerk user metadata with plan + expiry
+- `customer.subscription.deleted` → Downgrades user to free in Clerk metadata
+- `invoice.payment_failed` → Logged for monitoring
