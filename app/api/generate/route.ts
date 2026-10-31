@@ -78,6 +78,13 @@ Return ONLY the final copy. No explanation. No hashtags. No label prefix.`;
 }
 
 // ── Groq (free tier) ─────────────────────────────────────────────────────────
+// Models listed in preference order — first available/working one wins.
+const GROQ_MODELS = [
+  "openai/gpt-oss-20b",
+  "qwen/qwen3.8-27b",
+  "openai/gpt-oss-120b",
+];
+
 async function generateWithGroq(
   platform: string,
   data: GenerateRequest
@@ -93,30 +100,37 @@ Tone: ${toneDesc}
 Format: ${PLATFORM_INSTRUCTIONS[platform]}
 Return ONLY the final copy. No explanation. No hashtags.`;
 
-  const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "Authorization": `Bearer ${process.env.GROQ_API_KEY!.trim()}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: "llama-3.3-70b-versatile",
-      messages: [
-        { role: "system", content: SYSTEM_PROMPT },
-        { role: "user", content: userPrompt },
-      ],
-      max_tokens: 512,
-      temperature: 0.8,
-    }),
-  });
+  let lastError = "";
+  for (const model of GROQ_MODELS) {
+    const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${process.env.GROQ_API_KEY!.trim()}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model,
+        messages: [
+          { role: "system", content: SYSTEM_PROMPT },
+          { role: "user", content: userPrompt },
+        ],
+        max_tokens: 512,
+        temperature: 0.8,
+      }),
+    });
 
-  if (!res.ok) {
+    if (res.ok) {
+      const json = await res.json();
+      const text = json.choices[0]?.message?.content?.trim();
+      if (text) return text;
+    }
+
     const err = await res.text();
-    throw new Error(`Groq error: ${err}`);
+    lastError = `Groq error (${model}): ${err}`;
+    console.warn(lastError);
   }
 
-  const json = await res.json();
-  return json.choices[0]?.message?.content?.trim() || "";
+  throw new Error(lastError || "All Groq models failed");
 }
 
 // ── Anthropic (paid) ─────────────────────────────────────────────────────────
