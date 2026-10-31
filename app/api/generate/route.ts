@@ -119,14 +119,20 @@ Return ONLY the final copy. No explanation. No hashtags.`;
       }),
     });
 
+    // Read body once — as text, then parse if successful
+    const rawBody = await res.text();
+
     if (res.ok) {
-      const json = await res.json();
-      const text = json.choices[0]?.message?.content?.trim();
-      if (text) return text;
+      try {
+        const json = JSON.parse(rawBody);
+        const text = json.choices?.[0]?.message?.content?.trim();
+        if (text) return text;
+      } catch {
+        // fall through to next model
+      }
     }
 
-    const err = await res.text();
-    lastError = `Groq error (${model}): ${err}`;
+    lastError = `Groq error (${model}): ${rawBody.slice(0, 300)}`;
     console.warn(lastError);
   }
 
