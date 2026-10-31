@@ -80,9 +80,9 @@ Return ONLY the final copy. No explanation. No hashtags. No label prefix.`;
 // ── Groq (free tier) ─────────────────────────────────────────────────────────
 // Models listed in preference order — first available/working one wins.
 const GROQ_MODELS = [
+  "openai/gpt-oss-120b",
   "openai/gpt-oss-20b",
   "qwen/qwen3.8-27b",
-  "openai/gpt-oss-120b",
 ];
 
 async function generateWithGroq(
@@ -125,15 +125,51 @@ Return ONLY the final copy. No explanation. No hashtags.`;
     if (res.ok) {
       try {
         const json = JSON.parse(rawBody);
-        const text = json.choices?.[0]?.message?.content?.trim();
+        const text =
+          json.choices?.[0]?.message?.content?.trim() ||
+          json.choices?.[0]?.text?.trim();
         if (text) return text;
+        // Successful response but no content — log and try next model
+        lastError = `Groq model ${model} returned empty content`;
+        console.warn(lastError, rawBody.slice(0, 200));
       } catch {
-        // fall through to next model
+        lastError = `Groq model ${model} returned unparseable response`;
+        console.warn(lastError);
       }
+    } else {
+      // On rate limit, wait 1s and retry the same model once
+      if (res.status === 429) {
+        await new Promise((r) => setTimeout(r, 1000));
+        const retry = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${process.env.GROQ_API_KEY!.trim()}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            model,
+            messages: [
+              { role: "system", content: SYSTEM_PROMPT },
+              { role: "user", content: userPrompt },
+            ],
+            max_tokens: 512,
+            temperature: 0.8,
+          }),
+        });
+        const retryBody = await retry.text();
+        if (retry.ok) {
+          try {
+            const json = JSON.parse(retryBody);
+            const text = json.choices?.[0]?.message?.content?.trim();
+            if (text) return text;
+          } catch { /* fall through */ }
+        }
+        lastError = `Groq rate limit retry failed (${model}): ${retryBody.slice(0, 200)}`;
+      } else {
+        lastError = `Groq error (${model}): ${rawBody.slice(0, 300)}`;
+      }
+      console.warn(lastError);
     }
-
-    lastError = `Groq error (${model}): ${rawBody.slice(0, 300)}`;
-    console.warn(lastError);
   }
 
   throw new Error(lastError || "All Groq models failed");
@@ -207,23 +243,21 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "No valid platforms selected" }, { status: 400 });
     }
 
-    // Run platforms in parallel — Groq supports concurrent requests
-    const settled = await Promise.allSettled(
-      requestedPlatforms.map((platform) => generateCopy(platform, data))
-    );
-
-    const results = settled.map((result, i) => {
+    // Run platforms sequentially with a small stagger to avoid Groq rate limits
+    const results: { platform: string; copy: string; error?: string }[] = [];
+    for (let i = 0; i < requestedPlatforms.length; i++) {
       const platform = requestedPlatforms[i];
-      if (result.status === "fulfilled") {
-        return { platform, copy: result.value };
-      } else {
-        const errMsg = result.reason instanceof Error
-          ? result.reason.message
-          : String(result.reason);
+      // Small stagger between requests (300ms) to stay within rate limits
+      if (i > 0) await new Promise((r) => setTimeout(r, 300));
+      try {
+        const copy = await generateCopy(platform, data);
+        results.push({ platform, copy });
+      } catch (err) {
+        const errMsg = err instanceof Error ? err.message : String(err);
         console.error(`Failed for ${platform}:`, errMsg);
-        return { platform, copy: "", error: `Error: ${errMsg.slice(0, 200)}` };
+        results.push({ platform, copy: "", error: `Error: ${errMsg.slice(0, 200)}` });
       }
-    });
+    }
 
     // Log to Supabase (optional, non-blocking)
     try {
