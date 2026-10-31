@@ -132,7 +132,7 @@ export default function ResultsView() {
 
       // Strip emojis — jsPDF can't render them
       const stripEmoji = (text: string) =>
-        text.replace(/[\u{1F000}-\u{1FFFF}|\u{2600}-\u{27FF}|\u{FE00}-\u{FEFF}]/gu, "").trim();
+        text.replace(/[\uD800-\uDFFF]|[\u2600-\u27FF]|[\uFE00-\uFEFF]/g, "").trim();
 
       // ── Header ──────────────────────────────────────────────────────────────
       doc.setFillColor(10, 79, 46);
